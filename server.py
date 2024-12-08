@@ -1,102 +1,104 @@
 import socket
 import threading
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import simpledialog
 import json
 
-def close_server():
-    global stop_server
-    boardcast('/r'.encode(FORMAT)) 
-    stop_server = True
-    server.close()
-    raise SystemExit(0)
-
-
-def console():
-    while True:
-        i = input('>').lower()
-        t = ['quit','exit','list']
-        if i in t:
-            if t.index(i) == 0 or t.index(i) == 1: # Tạo chương trình đóng
-                close_server()
-                raise SystemExit(0)
-                
-            elif t.index(i) == 2:
-                for k in range(len(nicknames)):
-                    print(f'[CLIENT] {clients[k]} [NICKNAME] {nicknames[k]}')
-
-def boardcast(msg):
-    for client in clients:
-        client.send(msg)
-
-def receive(): # Nhập kết nối từ mọi client và sử lí nickname
-    while not stop_server:
-        try:
-            client, address = server.accept()
-            print(f'[CONNECTED] Connected to {str(address)}')
-
-            client.send('/n'.encode(FORMAT))
-            nickname = client.recv(1024).decode(FORMAT)
-
-            if nickname in nicknames or nickname == '':
-                client.send('/nr'.encode(FORMAT))
-                client.close()
-            else:
-                nicknames.append(nickname)
-                clients.append(client)
-                boardcast(f'Chào mừng ngường dùng {nickname} đã tham gia chatroom.'.encode(FORMAT))
-                thread_handle = threading.Thread(target = handle,args = (client,))
-                thread_handle.start()
-        except ConnectionAbortedError:
-            break
-
-def close_client(client):
-    index = clients.index(client)
-    print(f'[DISCONNECTED] Client {nicknames[index]}')
-    nicknames.remove(nicknames[index])
-    clients.remove(clients[index])
-
-def handle(client): # Nhận tin nhắn từ các client
-    while not stop_server:
+def receive(): # Nhận tin nhắn từ server
+    while not CLOSE:
         try:
             msg = client.recv(1024).decode(FORMAT)
-            if msg:
-                if msg == '/r': # Nhận được yêu cầu client đã đóng
-                    close_client(client)
-                else:
-                    boardcast(msg.encode(FORMAT))
+            if msg == "/n":
+                client.send(nickname.encode(FORMAT))
+            elif msg == "/nr":
+                client.close()
+                messagebox.showwarning('Warning',"Nickname của bạn đã tồn tại hoặc không khả dùng.\nVui lòng sử dụng nickname khác")
+                window.destroy()
+                raise SystemExit(0)
+            elif msg == "/r": # Nhận yêu cầu đóng client từ server
+                listbox.insert(tk.END,'[SERVER] Server is closing ...')
+                listbox.see(tk.END)
+                close_client() # Đóng client
+            else:
+                listbox.insert(tk.END,msg) 
+                listbox.see(tk.END)
         except:
-            close_client(client)
-            print(f'[DISCONNECTED] Client {nicknames[clients.index(client)]}')
+            break
 
-# Cấu hình server
+def close_client():
+    client.send('/r'.encode(FORMAT))
+    client.close()
+    for widget in window.winfo_children():
+        widget.destroy()  # Xóa tất cả widget
+    window.quit()
+    raise SystemExit(0)
+
+def on_enter_pressed(event):
+    message = f'[{nickname}] {entry.get()}'
+    if entry.get():
+        client.send(message.encode(FORMAT))
+        entry.delete(0,tk.END)
+        listbox.see(tk.END)
+
+def send_message_by_button():
+    message = f'[{nickname}] {entry.get()}'
+    if entry.get():
+        client.send(message.encode(FORMAT))
+        entry.delete(0,tk.END)
+        listbox.see(tk.END)
+
 with open('config.json','r') as f:
     p = json.load(f)
     HOST = p['ip']  # Địa chỉ localhost
-    PORT = p['port']        # Cổng để giao tiếp
+    PORT = p['port']  # Cổng kết nối
 
-if not HOST or not PORT:
-    print('[ERROR] PLease check again config file')
+if not HOST and not PORT:
+    messagebox.showerror('Config','Vui lòng kiểm tra lại tệp cấu hình')
     raise SystemExit(0)
-stop_server = False
-
-print(f"[RUNNING] The server is running at {HOST}:{PORT}")
 
 FORMAT = 'utf-8'
-ADDRESS = (HOST,PORT)
+CLOSE = False
+ADDRESS = (HOST, PORT)
 
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# Kết nối với server
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 try:
-    server.bind(ADDRESS)
+    client.connect(ADDRESS)
 except:
-    print("[SERVER] Cann't starting server")
+    messagebox.showerror('Connection','Không thể kết nối đến server')
     raise SystemExit(0)
 
-server.listen()
+nickname = simpledialog.askstring("Input", "Vui lòng nhập nickname của bạn?")
 
-clients = []
-nicknames = []
+# Cửa sổ chính
+window = tk.Tk()
+window.title(f"Message-{nickname}")
 
-thread_console = threading.Thread(target = console)
-thread_receive = threading.Thread(target = receive)
+# Tạo Listbox
+listbox = tk.Listbox(window, height=10, width=36)
+listbox.grid(row = 0, column = 0, columnspan=3, sticky=tk.NSEW)
 
-thread_receive.start()
-thread_console.start()
+# Tạo entry
+entry = tk.Entry(window)
+entry.grid(row = 1, column = 0,sticky = tk.EW)
+
+# Tạo button
+button = tk.Button(window,text = "SEND",command=send_message_by_button)
+button.grid(row = 1, column = 1)
+
+#Tạo button
+bc = tk.Button(window,text = "CLOSE",command=close_client)
+bc.grid(row = 1, column = 2)
+
+window.rowconfigure(0, weight=1)
+window.columnconfigure(0, weight=1)
+
+# Bắt sự kiện phím enter/ return
+window.protocol("WM_DELETE_WINDOW", close_client)
+entry.bind("<Return>", on_enter_pressed)
+thread_receive_msg = threading.Thread(target = receive)
+thread_receive_msg.start()
+
+# Chạy ứng dụng
+window.mainloop()
