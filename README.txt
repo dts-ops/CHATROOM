@@ -17,7 +17,10 @@ Ví dụ:
 }
 Thay <your_ip> thành địa chỉ ip của server
 Thay <your_port> thành cổng của server
-============================================
+-------------------------------------------------------------
+Server chạy file server.py trước và để cho client kết nối sau
+===================================================
+Cần tải python trước link: https://www.python.org/
 Cách thư viện phụ thuộc:
     + socket
     + threading
